@@ -1,0 +1,14 @@
+Package: ufb
+Type: Package
+Title: Prepare Data for Distance Software and Compute Recruitment
+Version: 0.1
+Date: 2015-11-20
+Author: Andrew G. Keck
+Maintainer: Andrew G. Keck <agkeck@western.edu>
+Description: Data preparation and analysis for Distance Sampling of UFB.
+License: GPL
+LazyData: TRUE
+RoxygenNote: 5.0.1
+Suggests: knitr,
+    rmarkdown
+VignetteBuilder: knitr

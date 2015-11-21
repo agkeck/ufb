@@ -1,0 +1,105 @@
+---
+title: "UFB work flow"
+author: "Andrew G. Keck"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{UFB work flow}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+# Step 1: preparing the raw observation datasheet for processing by distance software.  
+Examine the data sheet and confirm that there are 7 sheets in the order
+UP upper, UP middle, UP lower, RC upper, RC lower, BC north, BC south.  We use the first 4 columns of each sheet and these should contain date, line, distance, observer.  We remove rows which have the word "Date" or are blank in the date column.
+
+Read the data sheet in and clean the data:
+```{r}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(ufb)
+ds <- read_ufb_datasheet("Distance Input 2015.xlsx")
+```
+Write a csv file for importing into distance software:
+```{r}
+dsf <- format_for_distance(ds)
+write.csv(dsf,row.names=FALSE,na="",file="distanceinput2015.csv", eol = "\r\n")
+```
+We can also get daily butterfly counts for use in checking the output of distance software.
+```{r}
+make_counts(ds)
+```
+These counts make good labels for the output from distance which lacks dates and regions.  Note that the subregions for BC are in opposite order in the output from distance so fix these manually.
+
+# Step 2: run distance software
+Save all the results from the selected analysis in a text file.  Run this file through the perl script newhandy.pl.  This creates a tab separated file with estimated abundance, upper and lower confidence levels, and a bunch of other stuff.  Use the labels from `make_counts` and adjust the BC subregions.  Confirm that the ratio estimate/count is approximately 17.  Create an annual abundance file with columns:
+
+date	region	sub_region	est	lower	upper
+
+Name this file "Year.xls"
+
+# Step 3: Calculate recruitment
+Load the abundance file "Year.xls" and calculate total recruitment and confidence intervals.
+
+```{r}
+abund <- read_excel("2015.xls")
+abund <- abund %>% mutate(date=as.Date(date,origin=as.Date("1899-12-30")),
+                     site=paste(region,sub_region))
+
+abund %>% group_by(site) %>% do(boot_ci(10,.)) # use 1000 reps in production
+```
+
+# Step 4: Abundance graphs
+
+Simple abundance graphs with free and fixed axes
+```{r}
+qplot(date,est,data=abund,geom=c("point"),xlab="",ylab="Abundance")+
+  facet_wrap(~site,scale="free")+
+  geom_errorbar(aes(ymin=lower,ymax=upper))+theme_bw()+
+  theme(axis.text.x=element_text(angle = 30, size=9,hjust = 1))
+
+#ggsave(file="reportgraphics/abundance_weak_free.pdf",width = 8,height=5)
+
+qplot(date,est,data=abund,geom=c("point"),xlab="",ylab="Abundance")+
+  facet_wrap(~site,scale="fixed")+
+  geom_errorbar(aes(ymin=lower,ymax=upper))+theme_bw()+
+  theme(axis.text.x=element_text(angle = 30, size=9,hjust = 1))
+#ggsave(file="reportgraphics/abundance_weak_fixed.pdf",width = 8,height=5)
+
+```
+
+Better graphs can be obtain by using the techniques in makegraphics.R in ufb2015 project.
+
+We can also get implied recruitment graphs to estimate the quality of our procedure:
+```{r}
+recruit_profile <-abund %>% group_by(site) %>% do(abund2recruit(.))
+
+# untrimmed
+qplot(date,recruit,data=recruit_profile,geom=c("point"),xlab="",
+      ylab="recruitment")+facet_wrap(~site,scale="free")+ theme_bw()+
+  theme(axis.text.x=element_text(angle = 30, size=9,hjust = 1))
+#ggsave(file="reportgraphics/recruit_untrimmed.pdf",width = 8,height=5)
+
+#trimmed
+qplot(date,recruit,data=mutate(
+  recruit_profile,recruit=ifelse(recruit<0,0,recruit)),
+  geom=c("point"),xlab="",ylab="recruitment")+
+  facet_wrap(~site,scale="free")+ theme_bw()+
+  theme(axis.text.x=element_text(angle = 30, size=9,hjust = 1))
+#ggsave(file="reportgraphics/recruit_trimmed.pdf",width = 8,height=5)
+```
+
+# Step 5: Annual recruitment trends
+Annual recruitments and confidence intervals are held in a csv file.  Append the new recruitment and CI to the file to keep it up to date.
+
+```{r}
+all_simple_ci <- read.csv("simple_ci_2003_2015.csv")
+
+ggplot(all_simple_ci,aes(x=year,y=est))+geom_point()+
+  facet_wrap(~region,scales = "free_y")+geom_errorbar(aes(ymin=lcl,ymax=ucl))+
+  theme(axis.text.x=element_text(angle = 90, hjust = 0))+
+  scale_x_continuous(breaks=seq(2004,2014,2))
+```
+
